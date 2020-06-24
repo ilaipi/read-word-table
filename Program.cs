@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using ClosedXML.Excel;
-using NPOI.SS.Formula.Functions;
 using NPOI.XWPF.UserModel;
 using TableIO;
 using TableIO.ClosedXml;
@@ -33,8 +31,6 @@ namespace read_word_table
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("current path: " + Assembly.GetExecutingAssembly().Location);
-
             string basePath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "..", "..", "assets");
             var files = Directory.GetFiles(basePath, "*.docx");
             IList<Model> models = new List<Model>();
@@ -42,7 +38,7 @@ namespace read_word_table
             foreach (var file in files)
             {
                 Console.WriteLine("file: " + file);
-                models.Add(ParseFile(Path.Combine(basePath, file), fields));
+                models.Add(ParseFile(basePath, file, fields));
             }
 
             // write models to file.
@@ -59,7 +55,7 @@ namespace read_word_table
             }
         }
 
-        private static Model ParseFile(string file, string[] fields)
+        private static Model ParseFile(string basePath, string filename, string[] fields)
         {
             int[][] cells = new int[13][] {
                 new int[2]{ 0, 1 }, new int[2] { 0, 3 }, new int[2] { 1, 1 },
@@ -68,7 +64,8 @@ namespace read_word_table
                 new int[2]{ 6, 1 }, new int[2]{ 2, 5 }, new int[2]{ 3, 3 },
                 new int[2]{ 2, 3 }
             };
-            XWPFDocument doc = new XWPFDocument(File.OpenRead(file));
+            Stream stream = File.OpenRead(filename);
+            XWPFDocument doc = new XWPFDocument(stream);
             XWPFTable table = doc.GetTableArray(0);
             Model model = new Model();
             PropertyInfo[] properties = model.GetType().GetProperties();
@@ -77,18 +74,31 @@ namespace read_word_table
                 int[] c = cells[i];
                 XWPFTableRow row = table.GetRow(c[0]);
                 XWPFTableCell cell = row.GetCell(c[1]);
-                model.sex = cell.GetText();
+                string text = cell.GetText();
+                if (fields[i] == "minzu" && !text.EndsWith("族")) // 汉 改为 汉族
+                {
+                    text = text + "族";
+                    cell.SetText(text);
+                }
+                if (fields[i] == "jiguan" && !text.Contains("省")) // 河南洛阳 改为 河南省洛阳市
+                {
+                    text = text.Substring(0, 2) + "省" + text.Substring(2, 2) + "市";
+                    cell.SetText(text);
+                }
                 foreach (PropertyInfo t in properties)
                 {
                     if (t.Name == fields[i])
                     {
-                        t.SetValue(model, cell.GetText());
+                        t.SetValue(model, text);
                         break;
                     }
                 }
             }
+            string outputdoc = Path.Combine(basePath, "神经内科", Path.GetFileName(filename));
+            doc.Write(File.OpenWrite(outputdoc));
             model.company = "洛阳市第三人民医院";
             model.area = "洛阳市瀍河区";
+            stream.Close();
             return model;
         }
     }
